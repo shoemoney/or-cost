@@ -1,0 +1,40 @@
+{
+  "name": "or-cost",
+  "version": "0.1.0",
+  "description": "OpenRouter model cost comparison + spend visibility CLI/dashboard",
+  "license": "MIT",
+  "author": "Jeremy Schoemaker <jeremy@shoemoney.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shoemoney/or-cost.git"
+  },
+  "keywords": [
+    "openrouter",
+    "llm",
+    "cost-tracking",
+    "usage-tracking",
+    "cli",
+    "typescript"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "or-cost": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "node --experimental-strip-types src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
