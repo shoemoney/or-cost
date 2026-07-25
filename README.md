@@ -1,15 +1,126 @@
-# or-cost
+<div align="center">
 
-OpenRouter model cost comparison + spend visibility CLI/dashboard.
+```
+                                    __
+   ____  _____      _____  ____ ___/ /_
+  / __ \/ ___/_____/ ___/ / __ \/ ___/ __/
+ / /_/ / /  /_____/ /__  / /_/ (__  ) /_
+ \____/_/         \___/  \____/____/\__/
 
-`or-cost` answers two questions: what does each model on OpenRouter actually cost, and what has my
-key spent. The catalog side — comparing prices across every model OpenRouter lists, ranking them,
-estimating a workload — needs **no API key at all**, because `GET /api/v1/models` is a public
-endpoint. Only the `spend` command talks to an authenticated endpoint.
+     what does it cost, and what did I spend?
+```
 
-Zero runtime dependencies. Node 22+, native `fetch`, `node:http`. MIT.
+# 💸 or-cost
 
-## Install
+**OpenRouter model cost comparison + spend visibility — CLI & local dashboard**
+
+[![CI](https://github.com/shoemoney/or-cost/actions/workflows/ci.yml/badge.svg)](https://github.com/shoemoney/or-cost/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A522-brightgreen.svg)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/typescript-strict-3178c6.svg)](tsconfig.json)
+[![Runtime deps](https://img.shields.io/badge/runtime%20deps-0-blue.svg)](package.json)
+[![Tests](https://img.shields.io/badge/tests-81%20passing-success.svg)](test/)
+
+</div>
+
+---
+
+`or-cost` answers two questions: 💰 **what does each model on OpenRouter actually cost**, and 📊 **what has my key spent**.
+
+The catalog side — comparing prices across every model OpenRouter lists, ranking them, estimating a workload — needs **no API key at all**, because `GET /api/v1/models` is a public endpoint. Only `spend` talks to an authenticated endpoint. ✨
+
+## 🧭 Table of contents
+
+| 🚀 Get going | 📖 Understand | 🔒 Trust |
+|---|---|---|
+| [Install](#-install) · [Usage](#️-usage) | [Blended cost](#️-how-blended-cost-works) · [Architecture](#️-architecture) | [Security](#-security) · [Rate limits](#-rate-limits--caching) |
+| [Sample output](#-sample-output) | [Why this matters](#-why-this-matters) | [Development](#-development) · [License](#-license) |
+
+## 🤔 Why
+
+| Question | Without `or-cost` | With `or-cost` |
+|---|---|---|
+| 💵 What does this model cost? | Two prices per model, in a web table, per provider | One blended number, sorted, in your terminal |
+| 🧮 What will *this workload* cost? | Spreadsheet + mental math | `or-cost estimate 100000 20000` |
+| 📉 What has my key drawn down? | Log into the dashboard | `or-cost spend` |
+| 🔑 Do I need credentials to compare prices? | — | **No.** Catalog is public |
+| 📦 What am I installing? | — | **Zero runtime dependencies** |
+
+## 🧠 Core concepts
+
+```mermaid
+mindmap
+  root((💸 or-cost))
+    📚 Catalog
+      🔓 Public, no key
+      💾 Cached 1 hour
+      🏷️ Priced per 1M tokens
+    ⚖️ Blended cost
+      🔢 Default 3:1 in:out
+      🎚️ input-ratio flag
+      ⚠️ Ranking, not billing
+    📊 Spend
+      🔑 Needs API key
+      💳 Usage vs limit
+      🧾 Per-generation ids
+    🖥️ Dashboard
+      🏠 Loopback only
+      🛡️ Everything escaped
+      🧩 node:http, no framework
+```
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart LR
+  CLI["⌨️ cli.ts<br/>parse + dispatch"] --> P["⚖️ pricing.ts<br/>normalize · filter · sort"]
+  CLI --> T["📋 table.ts<br/>render"]
+  CLI --> S["🖥️ server.ts<br/>node:http"]
+  S --> P
+  S --> T
+  P --> C["🌐 client.ts<br/>fetch · cache · backoff"]
+  S --> C
+  C -->|"🔓 GET /models"| OR["☁️ openrouter.ai"]
+  C -->|"🔑 GET /auth/key"| OR
+  C -->|"🔑 GET /generation"| OR
+  C <--> D[("💾 tmpdir cache<br/>1 hour TTL")]
+```
+
+<details>
+<summary>🔁 <b>How a catalog request actually flows</b> (cache + rate-limit handling)</summary>
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as 👤 You
+  participant C as 🌐 client.ts
+  participant D as 💾 disk cache
+  participant O as ☁️ OpenRouter
+
+  U->>C: or-cost models
+  C->>D: cache fresh? (< 1h)
+  alt ✅ hit
+    D-->>C: cached catalog
+    Note over C,O: zero API calls 🎉
+  else ❄️ miss or --no-cache
+    C->>O: GET /api/v1/models
+    alt 🟢 200
+      O-->>C: catalog
+      C->>D: write fetchedAt + data
+    else 🔴 429 / 5xx
+      O-->>C: Retry-After?
+      C->>C: back off 1s → 2s → 4s
+      C->>O: retry (max 4 attempts)
+    else ⛔ other 4xx
+      O-->>C: fail immediately
+    end
+  end
+  C-->>U: 📋 sorted table
+```
+
+</details>
+
+## 📦 Install
 
 ```bash
 git clone https://github.com/shoemoney/or-cost.git
@@ -19,22 +130,22 @@ npm run build
 node dist/cli.js models --limit 12
 ```
 
-Or link it onto your PATH so the `or-cost` bin works anywhere:
+🔗 Or link it onto your PATH so the `or-cost` bin works anywhere:
 
 ```bash
 npm link
 or-cost models --provider anthropic
 ```
 
-An API key is only needed for `spend` (and for the spend panel of `serve`):
+🔑 An API key is only needed for `spend` (and the spend panel of `serve`):
 
 ```bash
 export OPENROUTER_API_KEY=sk-or-...
 ```
 
-## Usage
+## ⌨️ Usage
 
-### models — compare prices across the catalog
+### 📚 `models` — compare prices across the catalog
 
 ```bash
 or-cost models                                  # cheapest 30 by blended cost
@@ -47,45 +158,60 @@ or-cost models --input-ratio 1                  # weight input and output equall
 or-cost models --no-cache --json                # skip the disk cache, emit JSON
 ```
 
-### estimate — cost of a concrete workload
+### 🧮 `estimate` — cost of a concrete workload
 
-Takes prompt tokens and completion tokens as positional arguments, then applies the same filters
-as `models`.
+Takes prompt tokens and completion tokens as positional arguments, then applies the same filters as `models`.
 
 ```bash
-or-cost estimate 100000 20000                   # 100K in, 20K out, cheapest 30 models (--limit 0 for all)
+or-cost estimate 100000 20000                   # 100K in, 20K out, cheapest 30 (--limit 0 for all)
 or-cost estimate 100000 20000 --provider openai --limit 10
 or-cost estimate 8000 2000 --max-price 5 --json
 ```
 
-### spend — key usage and per-generation breakdown
+### 📊 `spend` — key usage and per-generation breakdown
 
 Requires `OPENROUTER_API_KEY`. Prints key label, usage, credit limit, remaining, and tier.
-OpenRouter has no public "list all my generations" endpoint, so a per-model breakdown is built from
-generation ids you already hold (from your own logs, or from the `id` on a chat completion response)
-and pass in with `--ids`.
+
+> ⚠️ OpenRouter has **no public "list all my generations" endpoint**, so the per-model breakdown is built from generation ids you already hold (your own logs, or the `id` on a chat completion response) and pass with `--ids`.
 
 ```bash
 or-cost spend                                   # key usage summary only
-or-cost spend --ids gen-abc,gen-def             # + per-model breakdown for those generations
+or-cost spend --ids gen-abc,gen-def             # + per-model breakdown
 or-cost spend --json
 ```
 
-### serve — local dashboard
+### 🖥️ `serve` — local dashboard
 
-Serves the catalog view at `/`, the spend view at `/spend`, and the model list as JSON at
-`/api/models`. Binds `127.0.0.1` only; no key is required to browse the catalog.
+Catalog at `/`, spend at `/spend`, model list as JSON at `/api/models`. Binds `127.0.0.1` only; no key required to browse the catalog.
 
 ```bash
 or-cost serve                                   # http://localhost:7777
 or-cost serve --port 8080
 ```
 
-## Sample output
+### 🎛️ Flag reference
 
-Captured from real runs against the live public catalog.
+| Flag | Applies to | Default | What it does |
+|---|---|---|---|
+| `--provider <slug>` | `models` `estimate` | all | 🏢 Filter to one author/org |
+| `--search <text>` | `models` `estimate` | — | 🔍 Substring match on id or name |
+| `--sort <key>` | `models` `estimate` | `blended` | ↕️ `blended`·`input`·`output`·`context`·`name` |
+| `--desc` | `models` `estimate` | off | 🔃 Reverse the sort |
+| `--limit <n>` | `models` `estimate` | `30` | ✂️ Cap rows (`0` = no cap) |
+| `--max-price <usd>` | `models` `estimate` | — | 🚧 Drop models above this blended cost/1M |
+| `--free` | `models` `estimate` | off | 🆓 Only $0 models |
+| `--input-ratio <n>` | `models` `estimate` | `3` | ⚖️ Input:output weighting |
+| `--no-cache` | `models` `estimate` `serve` | off | ❄️ Bypass the 1-hour cache |
+| `--json` | all but `serve` | off | 🤖 Machine-readable output |
+| `--ids a,b,c` | `spend` | — | 🧾 Generation ids to break down |
+| `--port <n>` | `serve` | `7777` | 🔌 Dashboard port |
 
-`or-cost models --limit 12`
+## 📸 Sample output
+
+> Captured from real runs against the live public catalog. 🟢
+
+<details open>
+<summary>📚 <code>or-cost models --limit 12</code></summary>
 
 ```
 MODEL                                               PROVIDER     IN /1M  OUT /1M  BLENDED  CONTEXT
@@ -104,7 +230,10 @@ nvidia/nemotron-3.5-content-safety:free             nvidia         free     free
 nvidia/nemotron-nano-12b-v2-vl:free                 nvidia         free     free     free     128K
 ```
 
-`or-cost models --provider anthropic --limit 8`
+</details>
+
+<details open>
+<summary>🏢 <code>or-cost models --provider anthropic --limit 8</code></summary>
 
 ```
 MODEL                        PROVIDER   IN /1M  OUT /1M  BLENDED  CONTEXT
@@ -119,7 +248,10 @@ anthropic/claude-opus-4.5    anthropic   $5.00   $25.00   $10.00     200K
 anthropic/claude-opus-4.6    anthropic   $5.00   $25.00   $10.00       1M
 ```
 
-`or-cost estimate 100000 20000 --limit 8`
+</details>
+
+<details>
+<summary>🧮 <code>or-cost estimate 100000 20000 --limit 8</code></summary>
 
 ```
 MODEL                                               COST (100000 in / 20000 out)
@@ -134,54 +266,27 @@ nvidia/nemotron-3-nano-30b-a3b:free                                         free
 nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free                          free
 ```
 
-Sorting is cheapest-first, so the free tier fills the top. Add `--max-price`, `--provider`, or
-`--desc` to see the other end of the range.
+Sorting is cheapest-first, so the free tier fills the top. Add `--max-price`, `--provider`, or `--desc` to see the other end of the range.
 
-Two caveats visible in that first table. `google/lyria-3-*` are billed **per second of audio**, and
-OpenRouter publishes their per-token rates as `0` — or-cost reports what the API publishes, so they
-read as `free` even though they are paid models. Where OpenRouter instead publishes `-1` ("variable"),
-or-cost prints `n/a` and never $0:
+</details>
 
-```
-MODEL                   PROVIDER    IN /1M  OUT /1M  BLENDED  CONTEXT
-----------------------  ----------  ------  -------  -------  -------
-openrouter/free         openrouter    free     free     free     200K
-openrouter/auto         openrouter     n/a      n/a      n/a       2M
-openrouter/auto-beta    openrouter     n/a      n/a      n/a       2M
-openrouter/bodybuilder  openrouter     n/a      n/a      n/a     128K
-```
+> ### ⚠️ Two honest caveats visible above
+>
+> 🎵 `google/lyria-3-*` are billed **per second of audio**, and OpenRouter publishes their per-token rates as `0` — or-cost reports what the API publishes, so they read as `free` even though they are paid models.
+>
+> ❓ Where OpenRouter instead publishes `-1` ("variable"), or-cost prints **`n/a`**, never `$0`:
+>
+> ```
+> MODEL                   PROVIDER    IN /1M  OUT /1M  BLENDED  CONTEXT
+> ----------------------  ----------  ------  -------  -------  -------
+> openrouter/free         openrouter    free     free     free     200K
+> openrouter/auto         openrouter     n/a      n/a      n/a       2M
+> openrouter/auto-beta    openrouter     n/a      n/a      n/a       2M
+> openrouter/bodybuilder  openrouter     n/a      n/a      n/a     128K
+> ```
 
-`or-cost help`
-
-```
-or-cost — OpenRouter model cost comparison + spend visibility
-
-Usage:
-  or-cost models [options]            Compare model prices (no API key needed)
-  or-cost spend [--ids a,b,c]         Show key usage + per-model breakdown
-  or-cost estimate <in> <out> [opts]  Cost of a workload across models
-  or-cost serve [--port 7777]         Local dashboard for both views
-
-Options:
-  --provider <slug>   Filter to one author/org (anthropic, openai, ...)
-  --search <text>     Substring match on model id or name
-  --sort <key>        blended | input | output | context | name   (default: blended)
-  --desc              Reverse the sort
-  --limit <n>         Cap rows (default: 30, 0 for all)
-  --max-price <usd>   Drop models above this blended cost per 1M
-  --free              Only $0 models
-  --input-ratio <n>   Input:output weighting for blended cost (default: 3)
-  --no-cache          Bypass the 1-hour catalog cache
-  --json              Machine-readable output
-  --port <n>          Port for serve (default: 7777)
-
-Environment:
-  OPENROUTER_API_KEY  Required for 'spend' only. Never written to disk.
-```
-
-### spend output shape
-
-Not run here — it needs a live key. This is the shape the code emits, as an example:
+<details>
+<summary>📊 <code>or-cost spend</code> — output shape (not run here; needs a live key)</summary>
 
 ```
 Key:       production-gateway
@@ -198,89 +303,93 @@ openai/gpt-4.1-mini              5   12.0K        2.4K  $0.0087
 Total: $0.2448
 ```
 
-With no `--ids`, the key summary prints and the breakdown is replaced by a hint showing the
-`--ids` form.
+With no `--ids`, the key summary prints and the breakdown is replaced by a hint showing the `--ids` form.
 
-## How blended cost works
+</details>
 
-Models publish two prices — input and output per token — which makes ranking awkward: a model can be
-cheap to read and expensive to write. `or-cost` collapses them into one comparable number:
+## ⚖️ How blended cost works
+
+Models publish two prices — input and output per token — which makes ranking awkward: a model can be cheap to read and expensive to write. `or-cost` collapses them into one comparable number:
 
 ```
 blended = (input × ratio + output) / (ratio + 1)
 ```
 
-The default ratio is **3**, i.e. 3 input tokens per 1 output token, which is the rough shape of most
-real traffic (long context and system prompts in, short answers out). The weights are normalized, so
-a model that charges the same for input and output blends to exactly that price. Change the
-assumption with `--input-ratio` — `--input-ratio 1` weights them equally, a high ratio models
-retrieval-heavy workloads, `--input-ratio 0` ranks purely on output price.
+The default ratio is **3** — 3 input tokens per 1 output token, the rough shape of most real traffic (long context and system prompts in, short answers out). The weights are normalized, so a model charging the same for input and output blends to exactly that price.
 
-**This is a ranking heuristic, not a billing figure.** It does not know your actual traffic mix, and
-it ignores cached input, image, and request pricing. Models with no comparable per-token price —
-OpenRouter publishes `-1` for variable pricing (`openrouter/auto` and friends), and models billed per
-second or per image carry no prompt/completion rate — render as `n/a`, not `free`. They are excluded
-from `--free` and from `--max-price`, and they sort last on any price sort, so an unknown cost is
-never presented as $0. For a number tied to real usage, use
-`estimate <in> <out>` with your own token counts, or `spend` with real generation ids.
+| `--input-ratio` | Models a workload that is… |
+|---|---|
+| `0` | 📤 Ranked purely on output price |
+| `1` | ⚖️ Symmetric read/write |
+| `3` *(default)* | 📥 Typical chat / assistant traffic |
+| `10`+ | 📚 Retrieval-heavy, huge context, short answers |
 
-## Rate limits and caching
+> 🚨 **This is a ranking heuristic, not a billing figure.** It does not know your traffic mix, and it ignores cached input, image, and request pricing.
 
-The model catalog is fetched once and cached on disk for **1 hour**, in `or-cost/models.json` under
-the OS temp directory. Every subsequent `models`, `estimate`, or `serve` run reads the cache, so
-filtering and re-sorting the catalog costs zero API calls. Pass `--no-cache` to force a fresh fetch.
+Models with no comparable per-token price render as **`n/a`**, not `free` — they are excluded from `--free` and `--max-price`, and sort **last** on any price sort, so an unknown cost is never presented as $0. For a number tied to real usage, use `estimate` with your own token counts, or `spend` with real generation ids.
 
-On `429` or any `5xx`, requests are attempted up to 4 times (3 retries, backing off 1s, 2s, 4s), honoring
-the `Retry-After` header when the server sends one. Other 4xx responses fail immediately — retrying a
-bad key just burns the limit faster.
+## 🚦 Rate limits & caching
 
-A cost tool that hammers the API is the joke that writes itself. Being polite to the endpoint is part
-of the product.
+| Behavior | Detail |
+|---|---|
+| 💾 Catalog cache | `or-cost/models.json` in the OS temp dir, **1 hour** TTL |
+| 🎉 Cache hit cost | **Zero API calls** — filtering and re-sorting are free |
+| ❄️ Force refresh | `--no-cache` |
+| 🔁 Retries | Up to **4 attempts** (3 retries) on `429` / `5xx` |
+| ⏱️ Backoff | 1s → 2s → 4s, honoring `Retry-After` when sent |
+| ⛔ Other `4xx` | Fail immediately — retrying a bad key just burns the limit faster |
 
-## Why this matters
+> A cost tool that hammers the API is the joke that writes itself. Being polite to the endpoint is part of the product. 😅
 
-Rolling an LLM gateway out across an organization turns model choice into a budget decision, and
-budget decisions need a paper trail before finance or security signs off. The questions that stall a
-rollout are always the same three: which team spent what, on which model, against whose budget.
-Answering them after the invoice arrives is too late — by then the spend is already committed and the
-conversation is a post-mortem instead of a control.
+## 🏢 Why this matters
 
-`or-cost` covers the front half of that. The catalog view makes the price delta between models legible
-before anyone commits to one: swapping a mid-tier model for a frontier model on a high-volume path can
-move a monthly bill by an order of magnitude, and that comparison should take seconds, not a
-spreadsheet. `estimate` turns a proposed workload into a dollar figure per model, which is the number a
-team lead can actually defend in a planning meeting. `spend` reports what a key has drawn against its
-limit, which is the baseline any guardrail needs — you cannot set a threshold on a number nobody
-measures.
+Rolling an LLM gateway out across an organization turns model choice into a budget decision, and budget decisions need a paper trail before finance or security signs off. The questions that stall a rollout are always the same three: **which team spent what, on which model, against whose budget.** Answering them after the invoice arrives is too late — by then the spend is committed and the conversation is a post-mortem instead of a control.
 
-This is written from both sides of that table: as the security reviewer asking a vendor where the spend
-data lives and who can see it, and as the founder answering. Cost attribution is not a reporting
-feature bolted on at the end. It is the thing that decides whether the rollout gets approved.
+`or-cost` covers the front half of that:
 
-## Security
+| Surface | The question it answers before money moves |
+|---|---|
+| 📚 `models` | What is the price delta between the model we picked and the alternatives? |
+| 🧮 `estimate` | What will this proposed workload cost — a number a team lead can defend in planning? |
+| 📊 `spend` | What has this key drawn against its limit — the baseline any guardrail needs? |
 
-- The API key is read from `OPENROUTER_API_KEY` and nowhere else. There is no config file, no
-  credential prompt, no key argument.
-- The key is never written to disk and never logged. It is sent only as a `Bearer` header to
-  `openrouter.ai`.
-- The only thing cached on disk is the public model catalog — the same data anyone can fetch
-  unauthenticated from `GET /api/v1/models`. No usage data, no key data, no request bodies.
-- `serve` binds `127.0.0.1` (loopback) only — the spend view is never exposed to the LAN — and
-  renders every dynamic value through HTML escaping.
+Swapping a mid-tier model for a frontier model on a high-volume path can move a monthly bill by an order of magnitude, and that comparison should take seconds, not a spreadsheet. You cannot set a threshold on a number nobody measures.
 
-## Development
+This is written from both sides of that table: as the security reviewer asking a vendor where the spend data lives and who can see it, and as the founder answering. Cost attribution is not a reporting feature bolted on at the end. It is the thing that decides whether the rollout gets approved.
+
+## 🔒 Security
+
+- 🔑 The API key is read from `OPENROUTER_API_KEY` and **nowhere else**. No config file, no credential prompt, no key argument.
+- 🚫 The key is **never written to disk and never logged**. It is sent only as a `Bearer` header to `openrouter.ai`.
+- 💾 The only thing cached on disk is the **public** model catalog — the same data anyone can fetch unauthenticated. No usage data, no key data, no request bodies.
+- 🏠 `serve` binds **`127.0.0.1` (loopback) only** — the spend view is never exposed to the LAN — and renders every dynamic value through HTML escaping.
+
+## 🧪 Development
 
 ```bash
-npm test         # vitest
+npm test         # vitest — 81 tests
 npm run typecheck
 npm run build    # tsc -> dist/
 ```
 
-TypeScript strict mode, plus `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, and
-`verbatimModuleSyntax`. ESM throughout, so relative imports carry the `.js` extension. Dev
-dependencies are `typescript`, `vitest`, and `@types/node` — there are no runtime dependencies, and
-adding one should be treated as a design failure.
+| Guardrail | Setting |
+|---|---|
+| 🧷 Type safety | `strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` + `verbatimModuleSyntax` |
+| 📦 Runtime deps | **0** — adding one should be treated as a design failure |
+| 🛠️ Dev deps | `typescript`, `vitest`, `@types/node` |
+| 🤖 CI | Node 22 & 24 — typecheck, build, test |
+| 🧩 Modules | ESM throughout; relative imports carry the `.js` extension |
 
-## License
+## 📄 License
 
-MIT.
+MIT — see [LICENSE](LICENSE).
+
+---
+
+<div align="center">
+
+**Built because "what is this actually going to cost" deserved a faster answer than a spreadsheet.** 💸
+
+<sub>🔓 Catalog needs no key · 📦 Zero runtime deps · 🏠 Dashboard stays on loopback · 🧪 81 tests green</sub>
+
+</div>
