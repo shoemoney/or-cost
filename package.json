@@ -8,6 +8,10 @@
     "type": "git",
     "url": "git+https://github.com/shoemoney/or-cost.git"
   },
+  "homepage": "https://github.com/shoemoney/or-cost#readme",
+  "bugs": {
+    "url": "https://github.com/shoemoney/or-cost/issues"
+  },
   "keywords": [
     "openrouter",
     "llm",
@@ -24,13 +28,15 @@
     "or-cost": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "scripts": {
     "build": "tsc",
     "dev": "node --experimental-strip-types src/cli.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
